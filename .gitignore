@@ -46,6 +46,9 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+.blender-smoke-*/
+pytest_runner/
+git_write_test.tmp
 
 # Translations
 *.mo
