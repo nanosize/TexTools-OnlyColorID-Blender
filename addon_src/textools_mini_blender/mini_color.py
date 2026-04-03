@@ -1,0 +1,253 @@
+import bpy
+import bmesh
+from mathutils import Color
+
+from .settings import tt_settings
+
+
+material_prefix = "TTMini_color_"
+vertex_color_name = "TTMini_colorID"
+gamma = 2.2
+
+
+def _iter_enum_ids(enum_items):
+	return {item.identifier for item in enum_items}
+
+
+def _set_space_color_type(space, desired):
+	enum_items = space.shading.bl_rna.properties["color_type"].enum_items
+	enum_ids = _iter_enum_ids(enum_items)
+	fallbacks = [desired]
+	if desired == "VERTEX":
+		fallbacks.append("ATTRIBUTE")
+	if desired == "TEXTURE":
+		fallbacks.append("MATERIAL")
+	for candidate in fallbacks:
+		if candidate in enum_ids:
+			space.shading.color_type = candidate
+			return
+
+
+def get_color_layers(mesh):
+	if hasattr(mesh, "color_attributes"):
+		return mesh.color_attributes
+	return mesh.vertex_colors
+
+
+def get_color_layer(mesh, name=vertex_color_name):
+	return get_color_layers(mesh).get(name)
+
+
+def set_active_color_layer(mesh, layer):
+	layers = get_color_layers(mesh)
+	if layer is None:
+		return
+
+	for attr_name in ("active", "active_color"):
+		if hasattr(layers, attr_name):
+			try:
+				setattr(layers, attr_name, layer)
+			except (AttributeError, TypeError, ValueError):
+				pass
+
+	index = None
+	for i, entry in enumerate(layers):
+		if entry.name == layer.name:
+			index = i
+			break
+	if index is None:
+		return
+
+	for owner in (layers, mesh):
+		for attr_name in ("active_index", "active_color_index", "render_color_index"):
+			if hasattr(owner, attr_name):
+				try:
+					setattr(owner, attr_name, index)
+				except (AttributeError, TypeError, ValueError):
+					pass
+
+
+def ensure_color_layer(mesh, name=vertex_color_name):
+	layer = get_color_layer(mesh, name)
+	if layer is None:
+		if hasattr(mesh, "color_attributes"):
+			layer = mesh.color_attributes.new(name=name, type="BYTE_COLOR", domain="CORNER")
+		else:
+			layer = mesh.vertex_colors.new(name=name)
+	set_active_color_layer(mesh, layer)
+	return layer
+
+
+def remove_color_layer(mesh, name=vertex_color_name):
+	layer = get_color_layer(mesh, name)
+	if layer is not None:
+		get_color_layers(mesh).remove(layer)
+
+
+def set_polygons_color(obj, polygon_indices, color, layer_name=vertex_color_name):
+	layer = ensure_color_layer(obj.data, layer_name)
+	rgba = safe_color(color)
+	for polygon_index in polygon_indices:
+		polygon = obj.data.polygons[polygon_index]
+		for loop_index in polygon.loop_indices:
+			layer.data[loop_index].color = rgba
+	obj.data.update()
+	return layer
+
+
+def assign_slot(obj, index):
+	if index < len(obj.material_slots):
+		obj.material_slots[index].material = get_material(index)
+		assign_color(index)
+
+
+def safe_color(color):
+	if len(color) == 3:
+		return (*color, 1.0)
+	return color
+
+
+def assign_color(index):
+	material = get_material(index)
+	if material is None:
+		return
+	rgba = safe_color(get_color(index))
+	for node in material.node_tree.nodes:
+		if node.bl_idname == "ShaderNodeBsdfPrincipled":
+			node.inputs[0].default_value = rgba
+	material.diffuse_color = rgba
+
+
+def get_material(index):
+	name = get_name(index)
+	material = bpy.data.materials.get(name)
+	if material is None:
+		material = create_material(index)
+	assign_color(index)
+	return material
+
+
+def create_material(index):
+	name = get_name(index)
+	material = bpy.data.materials.new(name)
+	material.preview_render_type = "FLAT"
+	material.use_nodes = True
+	return material
+
+
+def get_name(index):
+	return f"{material_prefix}{index:02d}"
+
+
+def get_color(index):
+	if index < tt_settings().color_ID_count:
+		return getattr(tt_settings(), f"color_ID_color_{index}")
+	return (0.0, 0.0, 0.0)
+
+
+def set_color(index, color):
+	if index < tt_settings().color_ID_count:
+		setattr(tt_settings(), f"color_ID_color_{index}", color)
+
+
+def validate_face_colors(obj):
+	previous_mode = bpy.context.object.mode
+	count = tt_settings().color_ID_count
+
+	if len(obj.material_slots) < count:
+		for _ in range(count - len(obj.material_slots)):
+			bpy.ops.object.material_slot_add()
+			assign_slot(obj, len(obj.material_slots) - 1)
+
+	bpy.ops.object.mode_set(mode="EDIT")
+	bm = bmesh.from_edit_mesh(obj.data)
+	for face in bm.faces:
+		face.material_index %= count
+	obj.data.update()
+
+	if len(obj.material_slots) > count:
+		bpy.ops.object.mode_set(mode="OBJECT")
+		for _ in range(len(obj.material_slots) - count):
+			bpy.context.object.active_material_index = len(obj.material_slots) - 1
+			bpy.ops.object.material_slot_remove()
+
+	bpy.ops.object.mode_set(mode=previous_mode)
+
+
+def hex_to_color(hex_value):
+	hex_value = hex_value.strip("#")
+	lv = len(hex_value)
+	fin = [int(hex_value[i:i + lv // 3], 16) for i in range(0, lv, lv // 3)]
+	return (
+		pow(fin[0] / 255.0, gamma),
+		pow(fin[1] / 255.0, gamma),
+		pow(fin[2] / 255.0, gamma),
+	)
+
+
+def color_to_hex(color):
+	rgb = [pow(color[i], 1.0 / gamma) for i in range(3)]
+	return f"#{int(rgb[0] * 255):02X}{int(rgb[1] * 255):02X}{int(rgb[2] * 255):02X}"
+
+
+def get_color_id(index, count, jitter=False):
+	color = Color()
+	index_list = [
+		0, 171, 64, 213, 32, 96, 160, 224, 16, 48, 80, 112, 144, 176, 208, 240, 8, 24, 40, 56,
+		72, 88, 104, 120, 136, 152, 168, 184, 200, 216, 232, 248, 4, 12, 20, 28, 36, 44, 52, 60,
+		68, 76, 84, 92, 100, 108, 116, 124, 132, 140, 148, 156, 164, 172, 180, 188, 196, 204, 212,
+		220, 228, 236, 244, 252, 2, 6, 10, 14, 18, 22, 26, 30, 34, 38, 42, 46, 50, 54, 58, 62, 66,
+		70, 74, 78, 82, 86, 90, 94, 98, 102, 106, 110, 114, 118, 122, 126, 130, 134, 138, 142, 146,
+		150, 154, 158, 162, 166, 170, 174, 178, 182, 186, 190, 194, 198, 202, 206, 210, 214, 218,
+		222, 226, 230, 234, 238, 242, 246, 250, 254, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25,
+		27, 29, 31, 33, 35, 37, 39, 41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61, 63, 65, 67, 69, 71,
+		73, 75, 77, 79, 81, 83, 85, 87, 89, 91, 93, 95, 97, 99, 101, 103, 105, 107, 109, 111, 113,
+		115, 117, 119, 121, 123, 125, 127, 129, 131, 133, 135, 137, 139, 141, 143, 145, 147, 149,
+		151, 153, 155, 157, 159, 161, 163, 165, 167, 169, 128, 173, 175, 177, 179, 181, 183, 185,
+		187, 189, 191, 193, 195, 197, 199, 201, 203, 205, 207, 209, 211, 192, 215, 217, 219, 221,
+		223, 225, 227, 229, 231, 233, 235, 237, 239, 241, 243, 245, 247, 249, 251, 253, 255,
+	]
+
+	exponent = 0
+	while index > 255:
+		index -= 256
+		exponent += 1
+
+	if jitter:
+		color.hsv = ((index_list[index] + 1 / (2 ** exponent)) / 256.0, 0.9, 1.0)
+	else:
+		color.hsv = (index / count, 0.9, 1.0)
+
+	return color
+
+
+def update_properties_tab():
+	screen = getattr(bpy.context, "screen", None)
+	if screen is None:
+		return
+	for area in screen.areas:
+		if area.type != "PROPERTIES":
+			continue
+		for space in area.spaces:
+			if space.type != "PROPERTIES":
+				continue
+			space.context = "MATERIAL" if tt_settings().color_assign_mode == "MATERIALS" else "DATA"
+
+
+def update_view_mode():
+	screen = getattr(bpy.context, "screen", None)
+	if screen is None:
+		return
+	for area in screen.areas:
+		if area.type != "VIEW_3D":
+			continue
+		for space in area.spaces:
+			if space.type != "VIEW_3D":
+				continue
+			if space.shading.type == "RENDERED":
+				continue
+			space.shading.type = "SOLID"
+			if tt_settings().color_assign_mode == "MATERIALS":
+				_set_space_color_type(space, "MATERIAL")
+			else:
+				_set_space_color_type(space, "VERTEX")
