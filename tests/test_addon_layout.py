@@ -67,3 +67,19 @@ def test_operator_namespace_is_ttmini():
 		for match in pattern.finditer(content):
 			assert ".textools_" not in match.group(1)
 			assert ".ttmini_" in match.group(1)
+
+
+def test_mini_color_get_material_is_not_recursive():
+	module = _parse(ADDON_DIR / "mini_color.py")
+	get_material = None
+	for node in module.body:
+		if isinstance(node, ast.FunctionDef) and node.name == "get_material":
+			get_material = node
+			break
+	assert get_material is not None
+
+	for call in ast.walk(get_material):
+		if not isinstance(call, ast.Call):
+			continue
+		if isinstance(call.func, ast.Name):
+			assert call.func.id != "assign_color"

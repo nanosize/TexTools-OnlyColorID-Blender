@@ -123,7 +123,6 @@ def get_material(index):
 	material = bpy.data.materials.get(name)
 	if material is None:
 		material = create_material(index)
-	assign_color(index)
 	return material
 
 
