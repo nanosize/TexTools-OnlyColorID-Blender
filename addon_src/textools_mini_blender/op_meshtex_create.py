@@ -1,6 +1,7 @@
 import bpy
 import bmesh
 
+
 class op(bpy.types.Operator):
 	bl_idname = "uv.ttmini_meshtex_create"
 	bl_label = "UV Mesh"
@@ -143,6 +144,18 @@ def _collect_boundary_edges(islands, uv_layer):
 	return boundary_edges
 
 
+def _has_uv_select_mode_context():
+	screen = getattr(bpy.context, "screen", None)
+	if screen is None:
+		return False
+	for area in screen.areas:
+		if area.type != "IMAGE_EDITOR":
+			continue
+		if getattr(area, "ui_type", None) == "UV":
+			return True
+	return False
+
+
 
 def create_uv_mesh(self, context, obj, sk_create=True, bool_scale=True, delete_unselected=True, restore_selected=False):
 	# New object management
@@ -259,7 +272,8 @@ def create_uv_mesh(self, context, obj, sk_create=True, bool_scale=True, delete_u
 
 	if mode == 'EDIT' and not restore_selected:
 		# Workaround for selection not flushing properly from loops to EDGE Selection Mode, apparently since UV edge selection support was added to the UV space
-		bpy.ops.uv.select_mode(type='VERTEX')
+		if _has_uv_select_mode_context():
+			bpy.ops.uv.select_mode(type='VERTEX')
 		bpy.context.scene.tool_settings.uv_select_mode = selection_mode
 		bpy.ops.object.mode_set(mode='OBJECT')
 		bpy.ops.object.mode_set(mode=mode)
