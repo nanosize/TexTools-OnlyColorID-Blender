@@ -2,7 +2,7 @@ bl_info = {
 	"name": "TexTools-mini-Blender",
 	"description": "Color ID and Mesh UV tools for Blender.",
 	"author": "renderhjs, franMarz, Sav Martin, OpenAI Codex",
-	"version": (0, 1, 0),
+	"version": (0, 1, 1),
 	"blender": (5, 0, 0),
 	"category": "UV",
 	"location": "UV Editor > Sidebar > TexTools-mini",

@@ -8,7 +8,7 @@ import bpy
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-ADDON_ZIP = ROOT / "dist" / "TexTools-mini-Blender-package.zip"
+ADDON_ZIP = ROOT / "dist" / "TexTools-mini-Blender-latest-clean.zip"
 MODULE_NAME = "textools_mini_blender"
 
 

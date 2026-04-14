@@ -10,7 +10,9 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
+dist/*
+!dist/
+!dist/TexTools-mini-Blender-latest-clean.zip
 downloads/
 eggs/
 .eggs/

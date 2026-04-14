@@ -15,3 +15,9 @@ The add-on source lives in [`addon_src/textools_mini_blender`](./addon_src/texto
 
 - `pytest`
 - Blender CLI smoke test via `scripts/blender_smoke_test.py`
+- Blender CLI operator smoke test via `scripts/blender_ops_smoke.py`
+- Blender CLI ZIP install/update smoke tests via `scripts/blender_zip_ops_smoke.py` and `scripts/blender_zip_update_smoke.py`
+
+## Distribution
+
+- Latest install ZIP: `dist/TexTools-mini-Blender-latest-clean.zip`
